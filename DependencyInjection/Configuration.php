@@ -19,6 +19,7 @@
 namespace JMS\JobQueueBundle\DependencyInjection;
 
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
+use Symfony\Component\Config\Definition\Builder\NodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -34,8 +35,8 @@ class Configuration implements ConfigurationInterface
      */
     public function getConfigTreeBuilder()
     {
-        $treeBuilder = new TreeBuilder();
-        $rootNode = $treeBuilder->root('jms_job_queue');
+        $treeBuilder = new TreeBuilder('jms_job_queue');
+        $rootNode = $treeBuilder->getRootNode();
 
         $rootNode
             ->children()
@@ -57,7 +58,7 @@ class Configuration implements ConfigurationInterface
         return $treeBuilder;
     }
 
-    private function addQueueOptions(ArrayNodeDefinition $def)
+    private function addQueueOptions(NodeDefinition $def)
     {
         $def
             ->children()
