@@ -6,6 +6,7 @@ use Doctrine\DBAL\Statement;
 use Doctrine\DBAL\Types\Type;
 
 use Symfony\Bundle\FrameworkBundle\Console\Application as BaseApplication;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -29,7 +30,7 @@ class Application extends BaseApplication
         $this->getDefinition()->addOption(new InputOption('--jms-job-id', null, InputOption::VALUE_REQUIRED, 'The ID of the Job.'));
     }
 
-    public function doRun(InputInterface $input, OutputInterface $output)
+    public function doRun(InputInterface $input, OutputInterface $output): int
     {
         $this->input = $input;
 
