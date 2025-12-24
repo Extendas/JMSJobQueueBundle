@@ -14,17 +14,22 @@ use Symfony\Component\Console\Input\InputArgument;
 
 class MarkJobIncompleteCommand extends Command
 {
-    protected static $defaultName = 'jms-job-queue:mark-incomplete';
+    public const COMMAND_NAME = 'jms-job-queue:mark-incomplete';
 
     private ManagerRegistry $registry;
     private JobManager $jobManager;
 
     public function __construct(ManagerRegistry $managerRegistry, JobManager $jobManager)
     {
-        parent::__construct();
+        parent::__construct(self::COMMAND_NAME);
 
         $this->registry = $managerRegistry;
         $this->jobManager = $jobManager;
+    }
+
+    public static function getDefaultName(): string
+    {
+        return self::COMMAND_NAME;
     }
 
     protected function configure(): void

@@ -16,19 +16,24 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 class CleanUpCommand extends Command
 {
-    protected static $defaultName = 'jms-job-queue:clean-up';
+    public const COMMAND_NAME = 'jms-job-queue:clean-up';
 
     private EntityManagerInterface $entityManager;
     private JobManager $jobManager;
 
     public function __construct(EntityManagerInterface $entityManager, JobManager $jobManager)
     {
-        parent::__construct();
+        parent::__construct(self::COMMAND_NAME);
         $this->entityManager = $entityManager;
         $this->jobManager = $jobManager;
     }
 
-    protected function configure()
+    public static function getDefaultName(): string
+    {
+        return self::COMMAND_NAME;
+    }
+
+    protected function configure(): void
     {
         $this
             ->setDescription('Cleans up jobs which exceed the maximum retention time.')

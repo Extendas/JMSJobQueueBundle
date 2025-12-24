@@ -18,7 +18,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 class ScheduleCommand extends Command
 {
-    protected static $defaultName = 'jms-job-queue:schedule';
+    public const COMMAND_NAME = 'jms-job-queue:schedule';
 
     private EntityManagerInterface $entityManager;
     private iterable $schedulers;
@@ -26,11 +26,16 @@ class ScheduleCommand extends Command
 
     public function __construct(EntityManagerInterface $entityManager, iterable $schedulers, iterable $cronCommands)
     {
-        parent::__construct();
+        parent::__construct(self::COMMAND_NAME);
 
         $this->entityManager = $entityManager;
         $this->schedulers = $schedulers;
         $this->cronCommands = $cronCommands;
+    }
+
+    public static function getDefaultName(): string
+    {
+        return self::COMMAND_NAME;
     }
 
     protected function configure(): void

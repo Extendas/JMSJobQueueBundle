@@ -36,7 +36,8 @@ use Symfony\Component\Process\Process;
 
 class RunCommand extends Command
 {
-    protected static $defaultName = 'jms-job-queue:run';
+    public const COMMAND_NAME = 'jms-job-queue:run';
+
     private string $env;
     private bool $verbose;
     private OutputInterface $output;
@@ -50,7 +51,7 @@ class RunCommand extends Command
 
     public function __construct(EntityManagerInterface $entityManager, JobManager $jobManager, EventDispatcherInterface $dispatcher, array $queueOptionsDefault, array $queueOptions)
     {
-        parent::__construct();
+        parent::__construct(self::COMMAND_NAME);
 
         $this->entityManager = $entityManager;
         $this->jobManager = $jobManager;
@@ -59,7 +60,12 @@ class RunCommand extends Command
         $this->queueOptions = $queueOptions;
     }
 
-    protected function configure()
+    public static function getDefaultName(): string
+    {
+        return self::COMMAND_NAME;
+    }
+
+    protected function configure(): void
     {
         $this
             ->setDescription('Runs jobs from the queue.')
