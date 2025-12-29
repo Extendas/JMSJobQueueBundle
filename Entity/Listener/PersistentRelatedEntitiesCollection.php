@@ -150,7 +150,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * @param mixed $offset
      * @return mixed
      */
-    public function offsetGet($offset)
+    public function offsetGet(mixed $offset): mixed
     {
         $this->initialize();
 
@@ -165,9 +165,8 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      *
      * @param mixed $offset
      * @param mixed $value
-     * @return bool
      */
-    public function offsetSet($offset, $value)
+    public function offsetSet(mixed $offset, mixed $value): void
     {
         throw new \LogicException('Adding new related entities is not supported after initial creation.');
     }
@@ -178,9 +177,8 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * @see remove()
      *
      * @param mixed $offset
-     * @return mixed
      */
-    public function offsetUnset($offset)
+    public function offsetUnset(mixed $offset): void
     {
         throw new \LogicException('unset() is not supported.');
     }
