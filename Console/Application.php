@@ -5,6 +5,7 @@ namespace JMS\JobQueueBundle\Console;
 use Doctrine\DBAL\Statement;
 use Doctrine\DBAL\Types\Type;
 
+use JMS\JobQueueBundle\Entity\Job;
 use Symfony\Bundle\FrameworkBundle\Console\Application as BaseApplication;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -71,6 +72,6 @@ class Application extends BaseApplication
 
     private function getConnection()
     {
-        return $this->getKernel()->getContainer()->get('doctrine')->getManagerForClass('JMSJobQueueBundle:Job')->getConnection();
+        return $this->getKernel()->getContainer()->get('doctrine')->getManagerForClass(Job::class)->getConnection();
     }
 }
