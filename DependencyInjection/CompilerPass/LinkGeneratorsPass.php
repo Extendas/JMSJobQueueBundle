@@ -8,14 +8,14 @@ use Symfony\Component\DependencyInjection\Reference;
 
 class LinkGeneratorsPass implements CompilerPassInterface
 {
-    public function process(ContainerBuilder $container)
+    public function process(ContainerBuilder $container): void
     {
         $generators = array();
         foreach ($container->findTaggedServiceIds('jms_job_queue.link_generator') as $id => $attrs) {
             $generators[] = new Reference($id);
         }
 
-        $container->getDefinition('jms_job_queue.twig.extension')
-                ->addArgument($generators);
+        $container->getDefinition('jms_job_queue.twig.job_queue_extension')
+            ->addArgument($generators);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace JMS\JobQueueBundle\Command;
 
+use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\Persistence\ManagerRegistry;
 use Doctrine\ORM\EntityManager;
 use JMS\JobQueueBundle\Entity\Job;
@@ -13,20 +14,25 @@ use Symfony\Component\Console\Input\InputArgument;
 
 class MarkJobIncompleteCommand extends Command
 {
-    protected static $defaultName = 'jms-job-queue:mark-incomplete';
+    public const COMMAND_NAME = 'jms-job-queue:mark-incomplete';
 
-    private $registry;
-    private $jobManager;
+    private ManagerRegistry $registry;
+    private JobManager $jobManager;
 
     public function __construct(ManagerRegistry $managerRegistry, JobManager $jobManager)
     {
-        parent::__construct();
+        parent::__construct(self::COMMAND_NAME);
 
         $this->registry = $managerRegistry;
         $this->jobManager = $jobManager;
     }
 
-    protected function configure()
+    public static function getDefaultName(): string
+    {
+        return self::COMMAND_NAME;
+    }
+
+    protected function configure(): void
     {
         $this
             ->setDescription('Internal command (do not use). It marks jobs as incomplete.')
@@ -34,7 +40,11 @@ class MarkJobIncompleteCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    /**
+     * @throws NonUniqueResultException
+     * @throws \Exception
+     */
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         /** @var EntityManager $em */
         $em = $this->registry->getManagerForClass(Job::class);

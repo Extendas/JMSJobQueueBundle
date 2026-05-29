@@ -2,9 +2,11 @@
 
 namespace JMS\JobQueueBundle\Command;
 
-use Doctrine\Persistence\ManagerRegistry;
-use Doctrine\DBAL\Connection;
-use Doctrine\ORM\EntityManager;
+use Doctrine\DBAL\Exception;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\NonUniqueResultException;
+use Doctrine\ORM\OptimisticLockException;
 use JMS\JobQueueBundle\Entity\Job;
 use JMS\JobQueueBundle\Entity\Repository\JobManager;
 use Symfony\Component\Console\Command\Command;
@@ -14,20 +16,24 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 class CleanUpCommand extends Command
 {
-    protected static $defaultName = 'jms-job-queue:clean-up';
+    public const COMMAND_NAME = 'jms-job-queue:clean-up';
 
-    private $jobManager;
-    private $registry;
+    private EntityManagerInterface $entityManager;
+    private JobManager $jobManager;
 
-    public function __construct(ManagerRegistry $registry, JobManager $jobManager)
+    public function __construct(EntityManagerInterface $entityManager, JobManager $jobManager)
     {
-        parent::__construct();
-
+        parent::__construct(self::COMMAND_NAME);
+        $this->entityManager = $entityManager;
         $this->jobManager = $jobManager;
-        $this->registry = $registry;
     }
 
-    protected function configure()
+    public static function getDefaultName(): string
+    {
+        return self::COMMAND_NAME;
+    }
+
+    protected function configure(): void
     {
         $this
             ->setDescription('Cleans up jobs which exceed the maximum retention time.')
@@ -37,20 +43,29 @@ class CleanUpCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    /**
+     * @throws OptimisticLockException
+     * @throws \Throwable
+     * @throws ORMException
+     * @throws Exception
+     */
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        /** @var EntityManager $em */
-        $em = $this->registry->getManagerForClass(Job::class);
-        $con = $em->getConnection();
+        $this->cleanUpExpiredJobs($input);
+        $this->collectStaleJobs();
 
-        $this->cleanUpExpiredJobs($em, $con, $input);
-        $this->collectStaleJobs($em);
         return 0;
     }
 
-    private function collectStaleJobs(EntityManager $em)
+    /**
+     * @throws OptimisticLockException
+     * @throws ORMException
+     * @throws NonUniqueResultException
+     * @throws Exception
+     */
+    private function collectStaleJobs(): void
     {
-        foreach ($this->findStaleJobs($em) as $job) {
+        foreach ($this->findStaleJobs() as $job) {
             if ($job->isRetried()) {
                 continue;
             }
@@ -61,16 +76,17 @@ class CleanUpCommand extends Command
 
     /**
      * @return Job[]
+     * @throws NonUniqueResultException
      */
-    private function findStaleJobs(EntityManager $em)
+    private function findStaleJobs(): iterable
     {
         $excludedIds = array(-1);
 
         do {
-            $em->clear();
+            $this->entityManager->clear();
 
             /** @var Job $job */
-            $job = $em->createQuery("SELECT j FROM JMSJobQueueBundle:Job j
+            $job = $this->entityManager->createQuery("SELECT j FROM JMSJobQueueBundle:Job j
                                       WHERE j.state = :running AND j.workerName IS NOT NULL AND j.checkedAt < :maxAge
                                                 AND j.id NOT IN (:excludedIds)")
                 ->setParameter('running', Job::STATE_RUNNING)
@@ -87,37 +103,47 @@ class CleanUpCommand extends Command
         } while ($job !== null);
     }
 
-    private function cleanUpExpiredJobs(EntityManager $em, Connection $con, InputInterface $input)
+    /**
+     * @throws Exception
+     */
+    private function cleanUpExpiredJobs(InputInterface $input): void
     {
+        $con = $this->entityManager->getConnection();
         $incomingDepsSql = $con->getDatabasePlatform()->modifyLimitQuery("SELECT 1 FROM jms_job_dependencies WHERE dest_job_id = :id", 1);
 
         $count = 0;
-        foreach ($this->findExpiredJobs($em, $input) as $job) {
+        foreach ($this->findExpiredJobs($input) as $job) {
             /** @var Job $job */
 
             $count++;
 
             $result = $con->executeQuery($incomingDepsSql, array('id' => $job->getId()));
             if ($result->fetchOne() !== false) {
-                $em->transactional(function() use ($em, $job) {
-                    $this->resolveDependencies($em, $job);
-                    $em->remove($job);
+                $this->entityManager->wrapInTransaction(function() use ($job) {
+                    $this->resolveDependencies($job);
+                    $this->entityManager->remove($job);
                 });
 
                 continue;
             }
 
-            $em->remove($job);
+            $this->entityManager->remove($job);
 
             if ($count >= $input->getOption('per-call')) {
                 break;
             }
         }
 
-        $em->flush();
+        $this->entityManager->flush();
     }
 
-    private function resolveDependencies(EntityManager $em, Job $job)
+    /**
+     * @param Job $job
+     * @throws Exception
+     * @throws ORMException
+     * @throws OptimisticLockException
+     */
+    private function resolveDependencies(Job $job)
     {
         // If this job has failed, or has otherwise not succeeded, we need to set the
         // incoming dependencies to failed if that has not been done already.
@@ -136,13 +162,13 @@ class CleanUpCommand extends Command
             }
         }
 
-        $em->getConnection()->executeStatement("DELETE FROM jms_job_dependencies WHERE dest_job_id = :id", ['id' => $job->getId()]);
+        $this->entityManager->getConnection()->executeStatement("DELETE FROM jms_job_dependencies WHERE dest_job_id = :id", array('id' => $job->getId()));
     }
 
-    private function findExpiredJobs(EntityManager $em, InputInterface $input)
+    private function findExpiredJobs(InputInterface $input): \Generator
     {
-        $succeededJobs = function(array $excludedIds) use ($em, $input) {
-            return $em->createQuery("SELECT j FROM JMSJobQueueBundle:Job j WHERE j.closedAt < :maxRetentionTime AND j.originalJob IS NULL AND j.state = :succeeded AND j.id NOT IN (:excludedIds)")
+        $succeededJobs = function(array $excludedIds) use ($input) {
+            return $this->entityManager->createQuery("SELECT j FROM JMSJobQueueBundle:Job j WHERE j.closedAt < :maxRetentionTime AND j.originalJob IS NULL AND j.state = :succeeded AND j.id NOT IN (:excludedIds)")
                 ->setParameter('maxRetentionTime', new \DateTime('-'.$input->getOption('max-retention-succeeded')))
                 ->setParameter('excludedIds', $excludedIds)
                 ->setParameter('succeeded', Job::STATE_FINISHED)
@@ -151,8 +177,8 @@ class CleanUpCommand extends Command
         };
         yield from $this->whileResults( $succeededJobs );
 
-        $finishedJobs = function(array $excludedIds) use ($em, $input) {
-            return $em->createQuery("SELECT j FROM JMSJobQueueBundle:Job j WHERE j.closedAt < :maxRetentionTime AND j.originalJob IS NULL AND j.id NOT IN (:excludedIds)")
+        $finishedJobs = function(array $excludedIds) use ($input) {
+            return $this->entityManager->createQuery("SELECT j FROM JMSJobQueueBundle:Job j WHERE j.closedAt < :maxRetentionTime AND j.originalJob IS NULL AND j.id NOT IN (:excludedIds)")
                 ->setParameter('maxRetentionTime', new \DateTime('-'.$input->getOption('max-retention')))
                 ->setParameter('excludedIds', $excludedIds)
                 ->setMaxResults(100)
@@ -160,8 +186,8 @@ class CleanUpCommand extends Command
         };
         yield from $this->whileResults( $finishedJobs );
 
-        $canceledJobs = function(array $excludedIds) use ($em, $input) {
-            return $em->createQuery("SELECT j FROM JMSJobQueueBundle:Job j WHERE j.state = :canceled AND j.createdAt < :maxRetentionTime AND j.originalJob IS NULL AND j.id NOT IN (:excludedIds)")
+        $canceledJobs = function(array $excludedIds) use ($input) {
+            return $this->entityManager->createQuery("SELECT j FROM JMSJobQueueBundle:Job j WHERE j.state = :canceled AND j.createdAt < :maxRetentionTime AND j.originalJob IS NULL AND j.id NOT IN (:excludedIds)")
                 ->setParameter('maxRetentionTime', new \DateTime('-'.$input->getOption('max-retention')))
                 ->setParameter('canceled', Job::STATE_CANCELED)
                 ->setParameter('excludedIds', $excludedIds)
@@ -171,7 +197,7 @@ class CleanUpCommand extends Command
         yield from $this->whileResults( $canceledJobs );
     }
 
-    private function whileResults(callable $resultProducer)
+    private function whileResults(callable $resultProducer): \Generator
     {
         $excludedIds = array(-1);
 

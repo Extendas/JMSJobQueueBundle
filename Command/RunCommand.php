@@ -18,7 +18,8 @@
 
 namespace JMS\JobQueueBundle\Command;
 
-use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ObjectManager;
 use JMS\JobQueueBundle\Entity\Job;
 use JMS\JobQueueBundle\Entity\Repository\JobManager;
 use JMS\JobQueueBundle\Event\NewOutputEvent;
@@ -35,50 +36,38 @@ use Symfony\Component\Process\Process;
 
 class RunCommand extends Command
 {
-    protected static $defaultName = 'jms-job-queue:run';
+    public const COMMAND_NAME = 'jms-job-queue:run';
 
-    /** @var string */
-    private $env;
+    private string $env;
+    private bool $verbose;
+    private OutputInterface $output;
+    private EntityManagerInterface $entityManager;
+    private JobManager $jobManager;
+    private EventDispatcherInterface $dispatcher;
+    private array $runningJobs = array();
+    private bool $shouldShutdown = false;
+    private array $queueOptionsDefault;
+    private array $queueOptions;
 
-    /** @var boolean */
-    private $verbose;
+    private ?string $databaseConnection = null;
 
-    /** @var OutputInterface */
-    private $output;
-
-    /** @var ManagerRegistry */
-    private $registry;
-
-    /** @var JobManager */
-    private $jobManager;
-
-    /** @var EventDispatcherInterface */
-    private $dispatcher;
-
-    /** @var array */
-    private $runningJobs = array();
-
-    /** @var bool */
-    private $shouldShutdown = false;
-
-    /** @var array */
-    private $queueOptionsDefault;
-
-    /** @var array */
-    private $queueOptions;
-
-    public function __construct(ManagerRegistry $managerRegistry, JobManager $jobManager, EventDispatcherInterface $dispatcher, array $queueOptionsDefault, array $queueOptions)
+    public function __construct(EntityManagerInterface $entityManager, JobManager $jobManager, EventDispatcherInterface $dispatcher, array $queueOptionsDefault, array $queueOptions)
     {
-        parent::__construct();
+        parent::__construct(self::COMMAND_NAME);
 
-        $this->registry = $managerRegistry;
+        $this->entityManager = $entityManager;
         $this->jobManager = $jobManager;
         $this->dispatcher = $dispatcher;
         $this->queueOptionsDefault = $queueOptionsDefault;
         $this->queueOptions = $queueOptions;
     }
 
-    protected function configure()
+    public static function getDefaultName(): string
+    {
+        return self::COMMAND_NAME;
+    }
+
+    protected function configure(): void
     {
         $this
             ->setDescription('Runs jobs from the queue.')
@@ -90,9 +79,17 @@ class RunCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    /**
+     * @throws \Exception
+     */
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $startTime = time();
+
+        if ($input->hasOption('X-Database'))
+        {
+            $this->databaseConnection = $input->getOption('X-Database');
+        }
 
         $maxRuntime = (integer) $input->getOption('max-runtime');
         if ($maxRuntime <= 0) {
@@ -131,7 +128,7 @@ class RunCommand extends Command
         $this->env = $input->getOption('env');
         $this->verbose = $input->getOption('verbose');
         $this->output = $output;
-        $this->getEntityManager()->getConnection()->getConfiguration()->setSQLLogger(null);
+        $this->entityManager->getConnection()->getConfiguration()->setSQLLogger(null);
 
         if ($this->verbose) {
             $this->output->writeln('Cleaning up stale jobs');
@@ -149,10 +146,14 @@ class RunCommand extends Command
             $this->queueOptionsDefault,
             $this->queueOptions
         );
+
         return 0;
     }
 
-    private function runJobs($workerName, $startTime, $maxRuntime, $idleTime, $maxJobs, array $restrictedQueues, array $queueOptionsDefaults, array $queueOptions)
+    /**
+     * @throws \Exception
+     */
+    private function runJobs($workerName, $startTime, $maxRuntime, $idleTime, $maxJobs, array $restrictedQueues, array $queueOptionsDefaults, array $queueOptions): void
     {
         $hasPcntl = extension_loaded('pcntl');
 
@@ -199,7 +200,7 @@ class RunCommand extends Command
         }
     }
 
-    private function setupSignalHandlers()
+    private function setupSignalHandlers(): void
     {
         pcntl_signal(SIGTERM, function() {
             if ($this->verbose) {
@@ -210,7 +211,7 @@ class RunCommand extends Command
         });
     }
 
-    private function startJobs($workerName, $idleTime, $maxJobs, array $restrictedQueues, array $queueOptionsDefaults, array $queueOptions)
+    private function startJobs($workerName, $idleTime, $maxJobs, array $restrictedQueues, array $queueOptionsDefaults, array $queueOptions): void
     {
         $excludedIds = array();
         while (count($this->runningJobs) < $maxJobs) {
@@ -231,7 +232,7 @@ class RunCommand extends Command
         }
     }
 
-    private function getExcludedQueues(array $queueOptionsDefaults, array $queueOptions, $maxConcurrentJobs)
+    private function getExcludedQueues(array $queueOptionsDefaults, array $queueOptions, $maxConcurrentJobs): array
     {
         $excludedQueues = array();
         foreach ($this->getRunningJobsPerQueue() as $queue => $count) {
@@ -243,7 +244,7 @@ class RunCommand extends Command
         return $excludedQueues;
     }
 
-    private function getMaxConcurrentJobs($queue, array $queueOptionsDefaults, array $queueOptions, $maxConcurrentJobs)
+    private function getMaxConcurrentJobs($queue, array $queueOptionsDefaults, array $queueOptions, $maxConcurrentJobs): int
     {
         if (isset($queueOptions[$queue]['max_concurrent_jobs'])) {
             return (integer) $queueOptions[$queue]['max_concurrent_jobs'];
@@ -256,7 +257,7 @@ class RunCommand extends Command
         return $maxConcurrentJobs;
     }
 
-    private function getRunningJobsPerQueue()
+    private function getRunningJobsPerQueue(): array
     {
         $runningJobsPerQueue = array();
         foreach ($this->runningJobs as $jobDetails) {
@@ -273,7 +274,10 @@ class RunCommand extends Command
         return $runningJobsPerQueue;
     }
 
-    private function checkRunningJobs()
+    /**
+     * @throws \Exception
+     */
+    private function checkRunningJobs(): void
     {
         foreach ($this->runningJobs as $i => &$data) {
             $newOutput = substr($data['process']->getOutput(), $data['output_pointer']);
@@ -322,9 +326,8 @@ class RunCommand extends Command
                 $data['job']->addOutput($newOutput);
                 $data['job']->addErrorOutput($newErrorOutput);
                 $data['job']->checked();
-                $em = $this->getEntityManager();
-                $em->persist($data['job']);
-                $em->flush($data['job']);
+                $this->entityManager->persist($data['job']);
+                $this->entityManager->flush($data['job']);
 
                 continue;
             }
@@ -333,7 +336,7 @@ class RunCommand extends Command
 
             // If the Job exited with an exception, let's reload it so that we
             // get access to the stack trace. This might be useful for listeners.
-            $this->getEntityManager()->refresh($data['job']);
+            $this->entityManager->refresh($data['job']);
 
             $data['job']->setExitCode($data['process']->getExitCode());
             $data['job']->setOutput($data['process']->getOutput());
@@ -348,7 +351,10 @@ class RunCommand extends Command
         gc_collect_cycles();
     }
 
-    private function startJob(Job $job)
+    /**
+     * @throws \Exception
+     */
+    private function startJob(Job $job): void
     {
         $event = new StateChangeEvent($job, Job::STATE_RUNNING);
         $this->dispatcher->dispatch($event, 'jms_job_queue.job_state_change');
@@ -365,9 +371,8 @@ class RunCommand extends Command
         }
 
         $job->setState(Job::STATE_RUNNING);
-        $em = $this->getEntityManager();
-        $em->persist($job);
-        $em->flush($job);
+        $this->entityManager->persist($job);
+        $this->entityManager->flush($job);
 
         $args = $this->getBasicCommandLineArgs();
         $args[] = $job->getCommand();
@@ -399,10 +404,10 @@ class RunCommand extends Command
      *
      * In such an error condition, these jobs are cleaned-up on restart of this command.
      */
-    private function cleanUpStaleJobs($workerName)
+    private function cleanUpStaleJobs($workerName): void
     {
         /** @var Job[] $staleJobs */
-        $staleJobs = $this->getEntityManager()->createQuery("SELECT j FROM ".Job::class." j WHERE j.state = :running AND (j.workerName = :worker OR j.workerName IS NULL)")
+        $staleJobs = $this->entityManager->createQuery("SELECT j FROM ".Job::class." j WHERE j.state = :running AND (j.workerName = :worker OR j.workerName IS NULL)")
             ->setParameter('worker', $workerName)
             ->setParameter('running', Job::STATE_RUNNING)
             ->getResult();
@@ -437,15 +442,15 @@ class RunCommand extends Command
             '--env='.$this->env
         );
 
+        if ($this->databaseConnection)
+        {
+            $args[] = "--X-Database={$this->databaseConnection}";
+        }
+
         if ($this->verbose) {
             $args[] = '--verbose';
         }
 
         return $args;
-    }
-
-    private function getEntityManager(): EntityManager
-    {
-        return /** @var EntityManager */ $this->registry->getManagerForClass('JMSJobQueueBundle:Job');
     }
 }

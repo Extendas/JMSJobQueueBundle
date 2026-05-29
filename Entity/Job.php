@@ -19,21 +19,25 @@
 namespace JMS\JobQueueBundle\Entity;
 
 use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use JMS\JobQueueBundle\Exception\InvalidStateTransitionException;
 use JMS\JobQueueBundle\Exception\LogicException;
-use Symfony\Component\Debug\Exception\FlattenException;
+use Symfony\Component\ErrorHandler\Exception\FlattenException;
 
 /**
- * @ORM\Entity
- * @ORM\Table(name = "jms_jobs", indexes = {
- *     @ORM\Index("cmd_search_index", columns = {"command"}),
- *     @ORM\Index("sorting_index", columns = {"state", "priority", "id"}),
- * })
- * @ORM\ChangeTrackingPolicy("DEFERRED_EXPLICIT")
- *
  * @author Johannes M. Schmitt <schmittjoh@gmail.com>
  */
+#[ORM\Entity()]
+#[ORM\Table(
+    name: 'jms_jobs',
+    indexes: [
+        new ORM\Index(name: 'cmd_search_index', columns: ['command']),
+        new ORM\Index(name: 'sorting_index', columns: ['state', 'priority', 'id']),
+    ]
+)]
+#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
 class Job
 {
     /** State if job is inserted, but not yet ready to be started. */
@@ -89,86 +93,85 @@ class Job
     const PRIORITY_DEFAULT = 0;
     const PRIORITY_HIGH = 5;
 
-    /** @ORM\Id @ORM\GeneratedValue(strategy = "AUTO") @ORM\Column(type = "bigint", options = {"unsigned": true}) */
-    private $id;
+    #[ORM\Id()]
+    #[ORM\GeneratedValue()]
+    #[ORM\Column(type: Types::BIGINT, options: ['unsigned' => true])]
+    private ?int $id = null;
 
-    /** @ORM\Column(type = "string", length = 15) */
-    private $state;
+    #[ORM\Column(type: Types::STRING, length: 15)]
+    private string $state;
 
-    /** @ORM\Column(type = "string", length = Job::MAX_QUEUE_LENGTH) */
-    private $queue;
+    #[ORM\Column(type: Types::STRING, length: Job::MAX_QUEUE_LENGTH)]
+    private string $queue;
 
-    /** @ORM\Column(type = "smallint") */
-    private $priority = 0;
+    #[ORM\Column(type: Types::SMALLINT)]
+    private int $priority = 0;
 
-    /** @ORM\Column(type = "datetime", name="createdAt") */
-    private $createdAt;
+    #[ORM\Column(name: 'createdAt', type: Types::DATETIME_MUTABLE)]
+    private \DateTime $createdAt;
 
-    /** @ORM\Column(type = "datetime", name="startedAt", nullable = true) */
-    private $startedAt;
+    #[ORM\Column(name: 'startedAt', type: Types::DATETIME_MUTABLE, nullable: true)]
+    private ?\DateTime $startedAt = null;
 
-    /** @ORM\Column(type = "datetime", name="checkedAt", nullable = true) */
-    private $checkedAt;
+    #[ORM\Column(name: 'checkedAt', type: Types::DATETIME_MUTABLE, nullable: true)]
+    private ?\DateTime $checkedAt = null;
 
-    /** @ORM\Column(type = "string", name="workerName", length = 50, nullable = true) */
-    private $workerName;
+    #[ORM\Column(name: 'workerName', type: Types::STRING, length: 50, nullable: true)]
+    private ?string $workerName = null;
 
-    /** @ORM\Column(type = "datetime", name="executeAfter", nullable = true) */
-    private $executeAfter;
+    #[ORM\Column(name: 'executeAfter', type: Types::DATETIME_MUTABLE, nullable: true)]
+    private \DateTime $executeAfter;
 
-    /** @ORM\Column(type = "datetime", name="closedAt", nullable = true) */
-    private $closedAt;
+    #[ORM\Column(name: 'closedAt', type: Types::DATETIME_MUTABLE, nullable: true)]
+    private ?\DateTime $closedAt = null;
 
-    /** @ORM\Column(type = "string") */
-    private $command;
+    #[ORM\Column(type: Types::STRING)]
+    private string $command;
 
-    /** @ORM\Column(type = "json") */
-    private $args;
+    #[ORM\Column(type: Types::JSON)]
+    private array $args;
 
-    /**
-     * @ORM\ManyToMany(targetEntity = "Job", fetch = "EAGER")
-     * @ORM\JoinTable(name="jms_job_dependencies",
-     *     joinColumns = { @ORM\JoinColumn(name = "source_job_id", referencedColumnName = "id") },
-     *     inverseJoinColumns = { @ORM\JoinColumn(name = "dest_job_id", referencedColumnName = "id")}
-     * )
-     */
-    private $dependencies;
+    #[ORM\ManyToMany(targetEntity: Job::class, fetch: 'EAGER')]
+    #[ORM\JoinTable(
+        name: 'jms_job_dependencies',
+        joinColumns: [new ORM\JoinColumn(name: "source_job_id", referencedColumnName: "id")],
+        inverseJoinColumns: [new ORM\JoinColumn(name: "dest_job_id", referencedColumnName: "id")]
+    )]
+    private Collection $dependencies;
 
-    /** @ORM\Column(type = "text", nullable = true) */
-    private $output;
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $output = null;
 
-    /** @ORM\Column(type = "text", name="errorOutput", nullable = true) */
-    private $errorOutput;
+    #[ORM\Column(name: 'errorOutput', type: Types::TEXT, nullable: true)]
+    private ?string $errorOutput = null;
 
-    /** @ORM\Column(type = "smallint", name="exitCode", nullable = true, options = {"unsigned": true}) */
-    private $exitCode;
+    #[ORM\Column(name: 'exitCode', type: Types::SMALLINT, nullable: true, options: ['unsigned' => true])]
+    private ?int $exitCode = null;
 
-    /** @ORM\Column(type = "smallint", name="maxRuntime", options = {"unsigned": true}) */
-    private $maxRuntime = 0;
+    #[ORM\Column(name: 'maxRuntime', type: Types::SMALLINT, options: ['unsigned' => true])]
+    private int $maxRuntime = 0;
 
-    /** @ORM\Column(type = "smallint", name="maxRetries", options = {"unsigned": true}) */
-    private $maxRetries = 0;
+    #[ORM\Column(name: 'maxRetries', type: Types::SMALLINT, options: ['unsigned' => true])]
+    private int $maxRetries = 0;
 
-    /**
-     * @ORM\ManyToOne(targetEntity = "Job", inversedBy = "retryJobs")
-     * @ORM\JoinColumn(name="originalJob_id", referencedColumnName="id")
-     */
+    #[ORM\ManyToOne(targetEntity: Job::class, inversedBy: 'retryJobs')]
+    #[ORM\JoinColumn(name: 'originalJob_id', referencedColumnName: 'id')]
     private $originalJob;
 
-    /** @ORM\OneToMany(targetEntity = "Job", mappedBy = "originalJob", cascade = {"persist", "remove", "detach", "refresh"}) */
+    #[ORM\OneToMany(targetEntity: Job::class, mappedBy: 'originalJob', cascade: ['persist', 'remove', 'detach', 'refresh'])]
     private $retryJobs;
 
-    /** @ORM\Column(type = "jms_job_safe_object", name="stackTrace", nullable = true) */
+    #[ORM\Column(name: 'stackTrace', type: 'jms_job_safe_object', nullable: true)]
     private $stackTrace;
 
-    /** @ORM\Column(type = "smallint", nullable = true, options = {"unsigned": true}) */
-    private $runtime;
+    #[ORM\Column(type: Types::SMALLINT, nullable: true, options: ['unsigned' => true])]
+    private ?int $runtime = null;
 
-    /** @ORM\Column(type = "integer", name="memoryUsage", nullable = true, options = {"unsigned": true}) */
-    private $memoryUsage;
+    #[ORM\Column(name: 'memoryUsage', type: Types::BIGINT, nullable: true, options: ['unsigned' => true])]
+    private ?int $memoryUsage = null;
 
-    /** @ORM\Column(type = "integer", name="memoryUsageReal", nullable = true, options = {"unsigned": true}) */
-    private $memoryUsageReal;
+    #[ORM\Column(name: 'memoryUsageReal', type: Types::BIGINT, nullable: true, options: ['unsigned' => true])]
+    private ?int $memoryUsageReal = null;
 
     /**
      * This may store any entities which are related to this job, and are
@@ -178,17 +181,17 @@ class Job
      */
     private $relatedEntities;
 
-    public static function create($command, array $args = array(), $confirmed = true, $queue = self::DEFAULT_QUEUE, $priority = self::PRIORITY_DEFAULT)
+    public static function create($command, array $args = array(), $confirmed = true, $queue = self::DEFAULT_QUEUE, $priority = self::PRIORITY_DEFAULT): Job
     {
         return new self($command, $args, $confirmed, $queue, $priority);
     }
 
-    public static function isNonSuccessfulFinalState($state)
+    public static function isNonSuccessfulFinalState($state): bool
     {
         return in_array($state, array(self::STATE_CANCELED, self::STATE_FAILED, self::STATE_INCOMPLETE, self::STATE_TERMINATED), true);
     }
 
-    public static function getStates()
+    public static function getStates(): array
     {
         return array(
             self::STATE_NEW,
@@ -202,7 +205,7 @@ class Job
         );
     }
 
-    public function __construct($command, array $args = array(), $confirmed = true, $queue = self::DEFAULT_QUEUE, $priority = self::PRIORITY_DEFAULT)
+    public function __construct(string $command, array $args = array(), $confirmed = true, $queue = self::DEFAULT_QUEUE, $priority = self::PRIORITY_DEFAULT)
     {
         if (trim($queue) === '') {
             throw new \InvalidArgumentException('$queue must not be empty.');
@@ -267,12 +270,12 @@ class Job
         return $this->priority * -1;
     }
 
-    public function isInFinalState()
+    public function isInFinalState(): bool
     {
         return ! $this->isNew() && ! $this->isPending() && ! $this->isRunning();
     }
 
-    public function isStartable()
+    public function isStartable(): bool
     {
         foreach ($this->dependencies as $dep) {
             if ($dep->getState() !== self::STATE_FINISHED) {
@@ -372,7 +375,7 @@ class Job
         return $this->relatedEntities;
     }
 
-    public function isClosedNonSuccessful()
+    public function isClosedNonSuccessful(): bool
     {
         return self::isNonSuccessfulFinalState($this->state);
     }
@@ -446,21 +449,25 @@ class Job
 
     public function addOutput($output)
     {
+        $output = iconv(mb_detect_encoding($output), 'UTF-8', $output);
         $this->output .= $output;
     }
 
     public function addErrorOutput($output)
     {
+        $output = iconv(mb_detect_encoding($output), 'UTF-8', $output);
         $this->errorOutput .= $output;
     }
 
     public function setOutput($output)
     {
+        $output = iconv(mb_detect_encoding($output), 'UTF-8', $output);
         $this->output = $output;
     }
 
     public function setErrorOutput($output)
     {
+        $output = iconv(mb_detect_encoding($output), 'UTF-8', $output);
         $this->errorOutput = $output;
     }
 
