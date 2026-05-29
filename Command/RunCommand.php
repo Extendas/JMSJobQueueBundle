@@ -49,6 +49,8 @@ class RunCommand extends Command
     private array $queueOptionsDefault;
     private array $queueOptions;
 
+    private ?string $databaseConnection = null;
+
     public function __construct(EntityManagerInterface $entityManager, JobManager $jobManager, EventDispatcherInterface $dispatcher, array $queueOptionsDefault, array $queueOptions)
     {
         parent::__construct(self::COMMAND_NAME);
@@ -83,6 +85,11 @@ class RunCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $startTime = time();
+
+        if ($input->hasOption('X-Database'))
+        {
+            $this->databaseConnection = $input->getOption('X-Database');
+        }
 
         $maxRuntime = (integer) $input->getOption('max-runtime');
         if ($maxRuntime <= 0) {
@@ -434,6 +441,11 @@ class RunCommand extends Command
             $_SERVER['SYMFONY_CONSOLE_FILE'] ?? $_SERVER['argv'][0],
             '--env='.$this->env
         );
+
+        if ($this->databaseConnection)
+        {
+            $args[] = "--X-Database={$this->databaseConnection}";
+        }
 
         if ($this->verbose) {
             $args[] = '--verbose';
